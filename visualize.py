@@ -27,6 +27,20 @@ def configure_plot_style():
     plt.rcParams['legend.fontsize'] = 9
 
 
+def add_figure_footer(fig, footer_text, y_position=-0.05):
+    """
+    Agrega una nota al pie del gráfico de forma consistente
+
+    Args:
+        fig: Figura de matplotlib
+        footer_text: Texto de la nota al pie
+        y_position: Posición vertical (default: -0.05)
+    """
+    fig.text(0.5, y_position, footer_text,
+             ha='center', va='top', fontsize=8, style='italic',
+             color='gray', wrap=True)
+
+
 def plot_consumo_agua_por_pais(fact_table, dim_geografia):
     """
     Gráfico de barras: Top 10 países por consumo de agua estimado
@@ -55,17 +69,21 @@ def plot_consumo_agua_por_pais(fact_table, dim_geografia):
     
     ax.set_xlabel('País', fontweight='bold')
     ax.set_ylabel('Consumo de Agua Estimado (Litros)', fontweight='bold')
-    ax.set_title('Top 10 Países por Consumo de Agua Estimado en Uso de IA', 
+    ax.set_title('Top 10 Países por Consumo de Agua Estimado en Uso de IA\n' +
+                 'Período: Junio 2024 - Junio 2025 (Acumulado Anual)',
                  fontweight='bold', fontsize=14, pad=20)
     ax.set_xticks(range(len(consumo_por_pais)))
     ax.set_xticklabels(consumo_por_pais.index, rotation=45, ha='right')
     ax.grid(axis='y', alpha=0.3, linestyle='--')
-    
+
     # Agregar valores en las barras
     for i, (bar, value) in enumerate(zip(bars, consumo_por_pais['ConsumoAguaEstimado'])):
         ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 50,
                 f'{value:,.0f}L', ha='center', va='bottom', fontsize=9)
-    
+
+    # Agregar nota al pie
+    add_figure_footer(fig, 'Factor: 0.5L/prompt | Países asignados aleatoriamente a sesiones')
+
     plt.tight_layout()
     filepath = os.path.join(config.VISUALIZATIONS_DIR, '01_consumo_agua_por_pais.png')
     plt.savefig(filepath, dpi=config.DPI, bbox_inches='tight')
@@ -103,17 +121,21 @@ def plot_uso_por_disciplina(fact_table, dim_estudiante):
     
     ax.set_ylabel('Disciplina', fontweight='bold')
     ax.set_xlabel('Total de Prompts', fontweight='bold')
-    ax.set_title('Uso de Asistente de IA por Disciplina Académica', 
+    ax.set_title('Uso de Asistente de IA por Disciplina Académica\n' +
+                 'Total de Prompts (Junio 2024 - Junio 2025)',
                  fontweight='bold', fontsize=14, pad=20)
     ax.set_yticks(range(len(uso_por_disciplina)))
     ax.set_yticklabels(uso_por_disciplina.index)
     ax.grid(axis='x', alpha=0.3, linestyle='--')
-    
+
     # Agregar valores en las barras
     for i, (bar, value) in enumerate(zip(bars, uso_por_disciplina['TotalPrompts'])):
         ax.text(bar.get_width() + 100, bar.get_y() + bar.get_height()/2,
                 f'{value:,}', va='center', fontsize=9)
-    
+
+    # Agregar nota al pie
+    add_figure_footer(fig, 'Datos basados en 10,000 sesiones de estudiantes')
+
     plt.tight_layout()
     filepath = os.path.join(config.VISUALIZATIONS_DIR, '02_uso_por_disciplina.png')
     plt.savefig(filepath, dpi=config.DPI, bbox_inches='tight')
@@ -166,16 +188,20 @@ def plot_tendencia_temporal(fact_table, dim_tiempo):
     # Formato de fechas en eje X
     ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
     plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45, ha='right')
-    
+
     # Título
-    ax1.set_title('Tendencia Temporal: Uso de IA y Consumo de Agua Estimado', 
+    ax1.set_title('Tendencia Temporal: Uso de IA y Consumo de Agua Estimado\n' +
+                  'Evolución Mensual (Junio 2024 - Junio 2025)',
                   fontweight='bold', fontsize=14, pad=20)
-    
+
     # Leyenda combinada
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
-    
+
+    # Agregar nota al pie
+    add_figure_footer(fig, 'Consumo calculado como: Prompts × 0.5L/prompt')
+
     plt.tight_layout()
     filepath = os.path.join(config.VISUALIZATIONS_DIR, '03_tendencia_temporal.png')
     plt.savefig(filepath, dpi=config.DPI, bbox_inches='tight')
@@ -220,15 +246,19 @@ def plot_uso_por_nivel_academico(fact_table, dim_estudiante):
     for autotext in autotexts:
         autotext.set_color('white')
         autotext.set_fontweight('bold')
-    
-    ax.set_title('Distribución de Sesiones de IA por Nivel Académico', 
+
+    ax.set_title('Distribución de Sesiones de IA por Nivel Académico\n' +
+                 'Total: 10,000 sesiones (Junio 2024 - Junio 2025)',
                  fontweight='bold', fontsize=14, pad=20)
-    
+
     # Agregar leyenda con conteos
-    legend_labels = [f'{level}: {count:,} sesiones' 
+    legend_labels = [f'{level}: {count:,} sesiones'
                     for level, count in uso_por_nivel['NumeroSesiones'].items()]
     ax.legend(legend_labels, loc='upper left', bbox_to_anchor=(1, 1))
-    
+
+    # Agregar nota al pie
+    add_figure_footer(fig, 'Cada sesión representa una interacción completa con el asistente de IA', y_position=-0.08)
+
     plt.tight_layout()
     filepath = os.path.join(config.VISUALIZATIONS_DIR, '04_distribucion_nivel_academico.png')
     plt.savefig(filepath, dpi=config.DPI, bbox_inches='tight')
@@ -278,13 +308,17 @@ def plot_escasez_vs_consumo(fact_table, dim_geografia):
     
     ax.set_xlabel('Nivel de Escasez de Agua', fontweight='bold')
     ax.set_ylabel('Valores', fontweight='bold')
-    ax.set_title('Uso de IA y Consumo de Agua según Nivel de Escasez Hídrica', 
+    ax.set_title('Relación entre Uso de IA y Nivel de Escasez Hídrica\n' +
+                 'Comparativa por Nivel de Escasez (Junio 2024 - Junio 2025)',
                  fontweight='bold', fontsize=14, pad=20)
     ax.set_xticks(x)
     ax.set_xticklabels(consumo_por_escasez.index)
     ax.legend()
     ax.grid(axis='y', alpha=0.3, linestyle='--')
-    
+
+    # Agregar nota al pie
+    add_figure_footer(fig, 'Sesiones ×10 para escala visual | Países clasificados según dataset global de agua')
+
     plt.tight_layout()
     filepath = os.path.join(config.VISUALIZATIONS_DIR, '05_escasez_vs_consumo.png')
     plt.savefig(filepath, dpi=config.DPI, bbox_inches='tight')
@@ -323,19 +357,23 @@ def plot_promedio_duracion_por_trimestre(fact_table, dim_tiempo):
     
     ax.set_xlabel('Trimestre', fontweight='bold')
     ax.set_ylabel('Duración Promedio (Minutos)', fontweight='bold')
-    ax.set_title('Duración Promedio de Sesiones de IA por Trimestre', 
+    ax.set_title('Duración Promedio de Sesiones de IA por Trimestre\n' +
+                 'Minutos promedio por sesión (Q3 2024 - Q2 2025)',
                  fontweight='bold', fontsize=14, pad=20)
     ax.grid(True, alpha=0.3, linestyle='--')
     plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
     ax.legend()
-    
+
     # Agregar línea de tendencia
     z = np.polyfit(range(len(duracion_trimestral)), duracion_trimestral['SessionLengthMin'], 1)
     p = np.poly1d(z)
-    ax.plot(duracion_trimestral['Periodo'], p(range(len(duracion_trimestral))), 
+    ax.plot(duracion_trimestral['Periodo'], p(range(len(duracion_trimestral))),
             "r--", alpha=0.5, linewidth=2, label='Tendencia')
     ax.legend()
-    
+
+    # Agregar nota al pie
+    add_figure_footer(fig, 'Línea roja indica tendencia general')
+
     plt.tight_layout()
     filepath = os.path.join(config.VISUALIZATIONS_DIR, '06_duracion_promedio_trimestre.png')
     plt.savefig(filepath, dpi=config.DPI, bbox_inches='tight')
@@ -386,15 +424,19 @@ def plot_heatmap_disciplina_nivel(fact_table, dim_estudiante):
                           ha="center", va="center", color="black" if value < pivot.values.max()/2 else "white",
                           fontsize=9)
     
-    ax.set_title('Total de Prompts por Disciplina y Nivel Académico', 
+    ax.set_title('Total de Prompts por Disciplina y Nivel Académico\n' +
+                 'Distribución Acumulada (Junio 2024 - Junio 2025)',
                  fontweight='bold', fontsize=14, pad=20)
     ax.set_xlabel('Nivel Académico', fontweight='bold')
     ax.set_ylabel('Disciplina', fontweight='bold')
-    
+
     # Barra de color
     cbar = plt.colorbar(im, ax=ax)
     cbar.set_label('Total de Prompts', rotation=270, labelpad=20, fontweight='bold')
-    
+
+    # Agregar nota al pie
+    add_figure_footer(fig, 'Intensidad de color indica mayor uso de IA')
+
     plt.tight_layout()
     filepath = os.path.join(config.VISUALIZATIONS_DIR, '07_matriz_disciplina_nivel.png')
     plt.savefig(filepath, dpi=config.DPI, bbox_inches='tight')
@@ -428,12 +470,12 @@ def generate_dashboard_summary(fact_table, dim_tiempo, dim_geografia, dim_estudi
     duracion_total = fact_table['SessionLengthMin'].sum()
     
     kpi_text = f"""
-    INDICADORES CLAVE DEL DATA WAREHOUSE
-    
-    📊 Total de Prompts: {total_prompts:,}                 💧 Consumo de Agua Estimado: {total_agua:,.2f} Litros
-    
-    🎯 Número de Sesiones: {total_sesiones:,}              ⏱️ Duración Total: {duracion_total:,.2f} Minutos ({duracion_total/60:,.2f} Horas)
-    
+    INDICADORES CLAVE DEL DATA WAREHOUSE (Junio 2024 - Junio 2025)
+
+    📊 Total de Prompts (Anual): {total_prompts:,}                 💧 Consumo de Agua Estimado (Anual): {total_agua:,.2f} Litros
+
+    🎯 Número de Sesiones (Anual): {total_sesiones:,}              ⏱️ Duración Total (Anual): {duracion_total:,.2f} Minutos ({duracion_total/60:,.2f} Horas)
+
     📈 Promedio de Prompts/Sesión: {total_prompts/total_sesiones:.2f}    ⏰ Duración Promedio/Sesión: {duracion_total/total_sesiones:.2f} Min
     """
     
@@ -480,9 +522,14 @@ def generate_dashboard_summary(fact_table, dim_tiempo, dim_geografia, dim_estudi
     ax5.set_ylabel('Litros', fontsize=9)
     ax5.grid(True, alpha=0.3)
     
-    fig.suptitle('DASHBOARD DE ANÁLISIS - USO DE IA Y CONSUMO DE AGUA', 
+    fig.suptitle('DASHBOARD DE ANÁLISIS - USO DE IA Y CONSUMO DE AGUA ESTIMADO\n' +
+                 'Período: Junio 2024 - Junio 2025',
                  fontweight='bold', fontsize=16, y=0.98)
-    
+
+    # Agregar nota al pie
+    fig.text(0.5, 0.01, 'Consumo de agua: Estimación basada en factor hipotético de 0.5L/prompt',
+             ha='center', va='bottom', fontsize=8, style='italic', color='gray')
+
     filepath = os.path.join(config.VISUALIZATIONS_DIR, '08_dashboard_resumen.png')
     plt.savefig(filepath, dpi=config.DPI, bbox_inches='tight')
     plt.close()
