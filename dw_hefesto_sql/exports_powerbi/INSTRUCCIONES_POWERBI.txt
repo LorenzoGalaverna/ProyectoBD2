@@ -1,0 +1,214 @@
+================================================================================
+  INSTRUCCIONES: IMPORTAR DATA WAREHOUSE A POWER BI
+================================================================================
+
+📁 UBICACIÓN DE LOS ARCHIVOS CSV:
+/Users/matiasvidal/dev/ProyectoBD2/dw_hefesto_sql/exports_powerbi/
+
+📊 ARCHIVOS GENERADOS (4 tablas):
+✓ DIM_GEOGRAFIA.csv             - 20 países
+✓ DIM_ESTUDIANTE.csv            - 21 combinaciones (nivel × disciplina)
+✓ DIM_TIEMPO.csv                - 366 fechas (jun-2024 a jun-2025)
+✓ HECHOS_HUELLA_HIDRICA_IA.csv  - 9,586 registros agregados
+
+================================================================================
+PASO 1: IMPORTAR ARCHIVOS CSV A POWER BI
+================================================================================
+
+1. Abrir Power BI Desktop
+
+2. Click en "Obtener datos" → "Texto/CSV"
+
+3. Seleccionar el primer archivo: DIM_GEOGRAFIA.csv
+   - Click "Cargar" (no "Transformar datos")
+
+4. Repetir para los otros 3 archivos:
+   - DIM_ESTUDIANTE.csv
+   - DIM_TIEMPO.csv
+   - HECHOS_HUELLA_HIDRICA_IA.csv
+
+5. Esperar a que todas las tablas se carguen
+
+================================================================================
+PASO 2: VERIFICAR TIPOS DE DATOS
+================================================================================
+
+1. Ir a "Vista de datos" (icono de tabla en la izquierda)
+
+2. Para cada tabla, verificar que los tipos sean correctos:
+
+   DIM_GEOGRAFIA:
+   - idGeografia: Número entero
+   - Pais: Texto
+   - Nivel_Escasez_Agua: Texto
+
+   DIM_ESTUDIANTE:
+   - idEstudiante: Número entero
+   - Nivel_Academico: Texto
+   - Disciplina: Texto
+
+   DIM_TIEMPO:
+   - idTiempo: Número entero
+   - Fecha: Fecha
+   - Anio: Número entero
+   - Trimestre: Número entero
+   - Mes: Número entero
+   - Nombre_Mes: Texto
+   - Dia_Semana: Texto
+
+   HECHOS_HUELLA_HIDRICA_IA:
+   - idGeografia: Número entero
+   - idEstudiante: Número entero
+   - idTiempo: Número entero
+   - Huella_Hidrica: Número decimal
+   - Total_Prompts: Número entero
+   - Duracion_Total_Sesiones: Número decimal
+   - Numero_Sesiones: Número entero
+
+================================================================================
+PASO 3: CREAR RELACIONES (MODELO)
+================================================================================
+
+1. Ir a "Vista de modelo" (icono de diagrama en la izquierda)
+
+2. Crear 3 relaciones arrastrando campos:
+
+   RELACIÓN 1:
+   De: DIM_GEOGRAFIA[idGeografia]
+   A:  HECHOS_HUELLA_HIDRICA_IA[idGeografia]
+   Cardinalidad: Uno a varios (1:*)
+   Dirección de filtro cruzado: Bidireccional
+
+   RELACIÓN 2:
+   De: DIM_ESTUDIANTE[idEstudiante]
+   A:  HECHOS_HUELLA_HIDRICA_IA[idEstudiante]
+   Cardinalidad: Uno a varios (1:*)
+   Dirección de filtro cruzado: Bidireccional
+
+   RELACIÓN 3:
+   De: DIM_TIEMPO[idTiempo]
+   A:  HECHOS_HUELLA_HIDRICA_IA[idTiempo]
+   Cardinalidad: Uno a varios (1:*)
+   Dirección de filtro cruzado: Bidireccional
+
+3. En propiedades de cada relación:
+   ✓ Activar "Asumir integridad referencial"
+
+================================================================================
+PASO 4: CREAR MEDIDAS DAX
+================================================================================
+
+1. Click derecho en la tabla "HECHOS_HUELLA_HIDRICA_IA"
+2. Seleccionar "Nueva medida"
+3. Crear estas medidas principales:
+
+// KPI 1: Huella Hídrica Total
+Total Huella Hídrica =
+SUM(HECHOS_HUELLA_HIDRICA_IA[Huella_Hidrica])
+
+// KPI 2: Total Sesiones
+Total Sesiones =
+SUM(HECHOS_HUELLA_HIDRICA_IA[Numero_Sesiones])
+
+// KPI 3: Total Prompts
+Total Prompts =
+SUM(HECHOS_HUELLA_HIDRICA_IA[Total_Prompts])
+
+// Litros por Sesión
+Litros por Sesión =
+DIVIDE([Total Huella Hídrica], [Total Sesiones], 0)
+
+// Prompts por Sesión
+Prompts por Sesión =
+DIVIDE([Total Prompts], [Total Sesiones], 0)
+
+// Duración Promedio
+Duración Promedio =
+DIVIDE(
+    SUM(HECHOS_HUELLA_HIDRICA_IA[Duracion_Total_Sesiones]),
+    [Total Sesiones],
+    0
+)
+
+================================================================================
+PASO 5: CREAR VISUALIZACIONES
+================================================================================
+
+PÁGINA 1: DASHBOARD PRINCIPAL
+
+1. Tarjetas (Cards) - 4 KPIs:
+   - Total Huella Hídrica
+   - Total Sesiones
+   - Total Prompts
+   - Litros por Sesión
+
+2. Gráfico de Barras - Top 10 Países:
+   Eje Y: DIM_GEOGRAFIA[Pais]
+   Eje X: Total Huella Hídrica
+   Ordenar: Descendente
+
+3. Gráfico de Líneas - Tendencia Temporal:
+   Eje X: DIM_TIEMPO[Fecha] (por mes)
+   Eje Y: Total Huella Hídrica
+
+4. Gráfico de Anillos - Distribución Nivel Académico:
+   Leyenda: DIM_ESTUDIANTE[Nivel_Academico]
+   Valores: Total Sesiones
+
+PÁGINA 2: ANÁLISIS ACADÉMICO
+
+1. Matriz - Disciplina × Nivel:
+   Filas: DIM_ESTUDIANTE[Disciplina]
+   Columnas: DIM_ESTUDIANTE[Nivel_Academico]
+   Valores: Total Prompts
+   Formato condicional: Escala de colores
+
+2. Gráfico de Barras - Top Disciplinas:
+   Eje Y: DIM_ESTUDIANTE[Disciplina]
+   Eje X: Total Prompts
+
+================================================================================
+VALORES ESPERADOS (Para validar)
+================================================================================
+
+Si todo está correcto, deberías ver:
+
+✓ Total Huella Hídrica: 28,037.50 litros
+✓ Total Prompts: 56,075
+✓ Total Sesiones: 10,000
+✓ Litros por Sesión: ~2.80 L
+✓ Prompts por Sesión: ~5.61
+
+================================================================================
+SOLUCIÓN DE PROBLEMAS
+================================================================================
+
+❌ Problema: "No se pueden crear relaciones"
+✓ Solución: Verificar que los tipos de datos de los IDs sean "Número entero"
+
+❌ Problema: "Los totales no coinciden"
+✓ Solución: Asegurarse de usar SUM() y no COUNT() en las medidas
+
+❌ Problema: "Campos de fecha no funcionan"
+✓ Solución: Click derecho en DIM_TIEMPO[Fecha] → Tipo de dato → Fecha
+
+================================================================================
+PRÓXIMOS PASOS
+================================================================================
+
+1. ✓ Importar los 4 archivos CSV
+2. ✓ Crear las 3 relaciones en Vista de Modelo
+3. ✓ Crear medidas DAX principales
+4. ✓ Construir visualizaciones sugeridas
+5. ✓ Guardar el archivo .pbix
+6. ✓ (Opcional) Publicar en Power BI Service
+
+================================================================================
+
+¡Tu Data Warehouse está listo para análisis! 🎉
+
+Para más información, consulta:
+- GUIA_RAPIDA_POWERBI.md
+- 3_modelo_logico/sql/03_consultas_ejemplo.sql
+
+================================================================================

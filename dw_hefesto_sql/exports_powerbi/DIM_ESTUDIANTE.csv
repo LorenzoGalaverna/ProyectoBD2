@@ -1,0 +1,22 @@
+idEstudiante,Nivel_Academico,Disciplina
+1,Graduate,Biology
+2,Graduate,Business
+3,Graduate,"Computer Science"
+4,Graduate,Engineering
+5,Graduate,History
+6,Graduate,Math
+7,Graduate,Psychology
+8,"High School",Biology
+9,"High School",Business
+10,"High School","Computer Science"
+11,"High School",Engineering
+12,"High School",History
+13,"High School",Math
+14,"High School",Psychology
+15,Undergraduate,Biology
+16,Undergraduate,Business
+17,Undergraduate,"Computer Science"
+18,Undergraduate,Engineering
+19,Undergraduate,History
+20,Undergraduate,Math
+21,Undergraduate,Psychology
