@@ -64,17 +64,20 @@ def crear_estructura_database():
 
     print("   ✓ Creando tablas de dimensiones...")
 
-    # Crear DIM_GEOGRAFIA
+    # Crear DIM_GEOGRAFIA (con Año para mantener variación temporal de escasez)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS DIM_GEOGRAFIA (
         idGeografia INTEGER PRIMARY KEY AUTOINCREMENT,
-        Pais TEXT NOT NULL UNIQUE,
+        Pais TEXT NOT NULL,
+        Anio INTEGER NOT NULL,
         Nivel_Escasez_Agua TEXT NOT NULL,
+        UNIQUE(Pais, Anio),
         CHECK (Nivel_Escasez_Agua IN ('Low', 'Moderate', 'High', 'Extreme'))
     );
     """)
 
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_geografia_pais ON DIM_GEOGRAFIA(Pais);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_geografia_anio ON DIM_GEOGRAFIA(Anio);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_geografia_escasez ON DIM_GEOGRAFIA(Nivel_Escasez_Agua);")
 
     # Crear DIM_ESTUDIANTE
@@ -221,30 +224,34 @@ def limpiar_datos(df_ai, df_water):
 # ============================================================================
 
 def cargar_dim_geografia(df_water, conn):
-    """Carga la dimensión Geografía"""
+    """Carga la dimensión Geografía con granularidad anual"""
     print("\n   🌍 Cargando DIM_GEOGRAFIA...")
 
-    # Obtener combinaciones únicas de país y nivel de escasez
-    geo_data = df_water.groupby('Country').agg({
-        'Water Scarcity Level': lambda x: x.mode()[0] if len(x.mode()) > 0 else x.iloc[0]
-    }).reset_index()
+    # Obtener combinaciones únicas de país, año y nivel de escasez
+    geo_data = df_water[['Country', 'Year', 'Water Scarcity Level']].drop_duplicates()
 
     geo_data.rename(columns={
         'Country': 'Pais',
+        'Year': 'Anio',
         'Water Scarcity Level': 'Nivel_Escasez_Agua'
     }, inplace=True)
+
+    # Ordenar por país y año
+    geo_data = geo_data.sort_values(['Pais', 'Anio']).reset_index(drop=True)
 
     # Insertar registros uno por uno para obtener IDs
     cursor = conn.cursor()
     for _, row in geo_data.iterrows():
         cursor.execute("""
-            INSERT INTO DIM_GEOGRAFIA (Pais, Nivel_Escasez_Agua)
-            VALUES (?, ?)
-        """, (row['Pais'], row['Nivel_Escasez_Agua']))
+            INSERT INTO DIM_GEOGRAFIA (Pais, Anio, Nivel_Escasez_Agua)
+            VALUES (?, ?, ?)
+        """, (row['Pais'], int(row['Anio']), row['Nivel_Escasez_Agua']))
     conn.commit()
 
-    print(f"      ✓ {len(geo_data):,} países cargados")
-    print(f"      ✓ Niveles de escasez: {geo_data['Nivel_Escasez_Agua'].unique()}")
+    print(f"      ✓ {len(geo_data):,} combinaciones (país + año) cargadas")
+    print(f"      ✓ Países únicos: {geo_data['Pais'].nunique()}")
+    print(f"      ✓ Rango de años: {geo_data['Anio'].min()} - {geo_data['Anio'].max()}")
+    print(f"      ✓ Niveles de escasez: {sorted(geo_data['Nivel_Escasez_Agua'].unique())}")
 
     return geo_data
 
@@ -328,10 +335,12 @@ def cargar_hechos(df_ai, conn):
     print("      → Asignando países a sesiones (seed=42 para reproducibilidad)...")
     # Asignar países aleatoriamente pero reproducible
     np.random.seed(RANDOM_SEED)
-    df_ai['Country'] = np.random.choice(dim_geografia['Pais'].tolist(), size=len(df_ai))
+    paises_unicos = dim_geografia['Pais'].unique()
+    df_ai['Country'] = np.random.choice(paises_unicos, size=len(df_ai))
 
     # Preparar datos para join
     df_ai['Fecha'] = pd.to_datetime(df_ai['SessionDate']).dt.date
+    df_ai['Anio'] = pd.to_datetime(df_ai['SessionDate']).dt.year
     df_ai['idTiempo'] = pd.to_datetime(df_ai['SessionDate']).dt.strftime('%Y%m%d').astype(int)
 
     # Renombrar columnas para match
@@ -342,12 +351,26 @@ def cargar_hechos(df_ai, conn):
     })
 
     print("      → Uniendo con dimensiones...")
-    # JOIN con geografía
+    # JOIN con geografía (considerando País Y Año para obtener nivel de escasez correcto)
+    # Para años fuera del rango de dim_geografia, usar el año más cercano disponible
+
+    # Obtener año mínimo y máximo en dim_geografia
+    anio_min = dim_geografia['Anio'].min()
+    anio_max = dim_geografia['Anio'].max()
+
+    # Ajustar años de sesiones al rango disponible
+    df_ai_renamed['Anio_Ajustado'] = df_ai_renamed['Anio'].clip(anio_min, anio_max)
+
     df_merged = df_ai_renamed.merge(
-        dim_geografia[['idGeografia', 'Pais']],
-        on='Pais',
+        dim_geografia[['idGeografia', 'Pais', 'Anio', 'Nivel_Escasez_Agua']],
+        left_on=['Pais', 'Anio_Ajustado'],
+        right_on=['Pais', 'Anio'],
         how='left'
     )
+
+    # Remover columna temporal
+    df_merged = df_merged.drop(columns=['Anio_Ajustado', 'Anio_y'])
+    df_merged = df_merged.rename(columns={'Anio_x': 'Anio'})
 
     # JOIN con estudiante
     df_merged = df_merged.merge(
