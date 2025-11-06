@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: datawarehouse_postgres
+    restart: always
+
+    # Credenciales de PostgreSQL
+    environment:
+      POSTGRES_USER: dwuser
+      POSTGRES_PASSWORD: dwpass
+      POSTGRES_DB: datawarehouse_db
+
+    # Puerto expuesto para Power BI y conexiones externas
+    ports:
+      - "5432:5432"
+
+    # Volumen persistente para mantener los datos
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d
+
+    # Health check para verificar que PostgreSQL está listo
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dwuser -d datawarehouse_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local

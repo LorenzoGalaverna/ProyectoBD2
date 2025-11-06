@@ -1,1 +1,36 @@
-__pycache__/*
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+venv/
+ENV/
+
+# Environment variables
+.env
+.env.local
+
+# Docker
+mysql_data/
+
+# Database files (SQLite - mantener por compatibilidad)
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
