@@ -15,9 +15,12 @@ POLÍTICA DE ACTUALIZACIÓN (según Hefesto):
 - Ventana de actualización: Últimos 30 días
 - Dimensiones: Carga total (son pequeñas)
 - Hechos: Reemplazo de ventana temporal
+
+MODIFICADO: Adaptado para usar PostgreSQL con psycopg2
 """
 
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -32,7 +35,6 @@ import sys
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 AI_USAGE_FILE = BASE_DIR / "archive (2)" / "ai_assistant_usage_student_life.csv"
 WATER_FILE = BASE_DIR / "archive (3)" / "cleaned_global_water_consumption.csv"
-DB_FILE = BASE_DIR / "dw_hefesto_sql" / "database" / "datawarehouse.db"
 
 # Parámetros de actualización
 VENTANA_DIAS = 30  # Actualizar últimos 30 días
@@ -119,25 +121,44 @@ def actualizar_dimensiones(df_ai, df_water, conn):
 
     cursor = conn.cursor()
 
-    # 1. DIM_GEOGRAFIA
+    # 1. DIM_GEOGRAFIA (con granularidad año)
     print("   🌍 Actualizando DIM_GEOGRAFIA...")
-    cursor.execute("DELETE FROM DIM_GEOGRAFIA;")
+    cursor.execute("SET FOREIGN_KEY_CHECKS = 0;")
+    cursor.execute("TRUNCATE TABLE DIM_GEOGRAFIA;")
+    cursor.execute("SET FOREIGN_KEY_CHECKS = 1;")
 
-    geo_data = df_water.groupby('Country').agg({
-        'Water Scarcity Level': lambda x: x.mode()[0] if len(x.mode()) > 0 else x.iloc[0]
-    }).reset_index()
-    geo_data.rename(columns={'Country': 'Pais', 'Water Scarcity Level': 'Nivel_Escasez_Agua'}, inplace=True)
-    geo_data.to_sql('DIM_GEOGRAFIA', conn, if_exists='append', index=False)
-    print(f"      ✓ {len(geo_data):,} países cargados")
+    geo_data = df_water[['Country', 'Year', 'Water Scarcity Level']].drop_duplicates()
+    geo_data.rename(columns={
+        'Country': 'Pais',
+        'Year': 'Anio',
+        'Water Scarcity Level': 'Nivel_Escasez_Agua'
+    }, inplace=True)
+    geo_data = geo_data.sort_values(['Pais', 'Anio']).reset_index(drop=True)
+
+    for _, row in geo_data.iterrows():
+        cursor.execute("""
+            INSERT INTO DIM_GEOGRAFIA (Pais, Anio, Nivel_Escasez_Agua)
+            VALUES (%s, %s, %s)
+        """, (row['Pais'], int(row['Anio']), row['Nivel_Escasez_Agua']))
+    conn.commit()
+    print(f"      ✓ {len(geo_data):,} combinaciones (país + año) cargadas")
 
     # 2. DIM_ESTUDIANTE
     print("   🎓 Actualizando DIM_ESTUDIANTE...")
-    cursor.execute("DELETE FROM DIM_ESTUDIANTE;")
+    cursor.execute("SET FOREIGN_KEY_CHECKS = 0;")
+    cursor.execute("TRUNCATE TABLE DIM_ESTUDIANTE;")
+    cursor.execute("SET FOREIGN_KEY_CHECKS = 1;")
 
     student_data = df_ai[['StudentLevel', 'Discipline']].drop_duplicates()
     student_data = student_data.sort_values(['StudentLevel', 'Discipline']).reset_index(drop=True)
     student_data.rename(columns={'StudentLevel': 'Nivel_Academico', 'Discipline': 'Disciplina'}, inplace=True)
-    student_data.to_sql('DIM_ESTUDIANTE', conn, if_exists='append', index=False)
+
+    for _, row in student_data.iterrows():
+        cursor.execute("""
+            INSERT INTO DIM_ESTUDIANTE (Nivel_Academico, Disciplina)
+            VALUES (%s, %s)
+        """, (row['Nivel_Academico'], row['Disciplina']))
+    conn.commit()
     print(f"      ✓ {len(student_data):,} combinaciones cargadas")
 
     # 3. DIM_TIEMPO (incremental: solo fechas nuevas)
@@ -167,12 +188,18 @@ def actualizar_dimensiones(df_ai, df_water, conn):
         dates_df = dates_df.sort_values('Fecha')
         dates_df = dates_df[['idTiempo', 'Fecha', 'Anio', 'Trimestre', 'Mes', 'Nombre_Mes', 'Dia_Semana']]
 
-        dates_df.to_sql('DIM_TIEMPO', conn, if_exists='append', index=False)
+        for _, row in dates_df.iterrows():
+            cursor.execute("""
+                INSERT INTO DIM_TIEMPO (idTiempo, Fecha, Anio, Trimestre, Mes, Nombre_Mes, Dia_Semana)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (int(row['idTiempo']), str(row['Fecha'].date()), int(row['Anio']),
+                  int(row['Trimestre']), int(row['Mes']), row['Nombre_Mes'], row['Dia_Semana']))
         print(f"      ✓ {len(dates_df):,} fechas nuevas agregadas")
     else:
         print("      ✓ No hay fechas nuevas para cargar")
 
     conn.commit()
+    cursor.close()
 
 # ============================================================================
 # ACTUALIZACIÓN DE HECHOS
@@ -198,7 +225,7 @@ def actualizar_hechos(df_ai, fecha_desde, fecha_hasta, conn):
     # Eliminar hechos en la ventana temporal
     cursor.execute("""
         DELETE FROM HECHOS_HUELLA_HIDRICA_IA
-        WHERE idTiempo >= ? AND idTiempo <= ?
+        WHERE idTiempo >= %s AND idTiempo <= %s
     """, (id_tiempo_desde, id_tiempo_hasta))
 
     registros_eliminados = cursor.rowcount
@@ -229,12 +256,22 @@ def actualizar_hechos(df_ai, fecha_desde, fecha_hasta, conn):
         'Discipline': 'Disciplina'
     })
 
-    # JOINs con dimensiones
+    # Preparar año para join con geografía
+    df_ventana_renamed['Anio'] = pd.to_datetime(df_ventana_renamed['SessionDate']).dt.year
+    anio_min = dim_geografia['Anio'].min()
+    anio_max = dim_geografia['Anio'].max()
+    df_ventana_renamed['Anio_Ajustado'] = df_ventana_renamed['Anio'].clip(anio_min, anio_max)
+
+    # JOINs con dimensiones (incluir Año para geografía)
     df_merged = df_ventana_renamed.merge(
-        dim_geografia[['idGeografia', 'Pais']],
-        on='Pais',
+        dim_geografia[['idGeografia', 'Pais', 'Anio']],
+        left_on=['Pais', 'Anio_Ajustado'],
+        right_on=['Pais', 'Anio'],
         how='left'
     )
+
+    df_merged = df_merged.drop(columns=['Anio_Ajustado', 'Anio_y'])
+    df_merged = df_merged.rename(columns={'Anio_x': 'Anio'})
 
     df_merged = df_merged.merge(
         dim_estudiante[['idEstudiante', 'Nivel_Academico', 'Disciplina']],
@@ -285,21 +322,20 @@ def actualizar_hechos(df_ai, fecha_desde, fecha_hasta, conn):
 def main():
     """Ejecuta el proceso completo de actualización incremental"""
     try:
-        # Validar que la BD existe
-        if not DB_FILE.exists():
-            print(f"   ✗ ERROR: Base de datos no encontrada: {DB_FILE}")
-            print("   → Ejecute primero: carga_inicial.py")
-            sys.exit(1)
-
         # Extraer datos
         df_ai, df_water = extraer_datos()
 
         # Limpiar datos
         df_ai_clean, df_water_clean = limpiar_datos(df_ai, df_water)
 
-        # Conectar a base de datos
-        conn = sqlite3.connect(DB_FILE)
-        conn.execute("PRAGMA foreign_keys = ON;")
+        # Conectar a base de datos PostgreSQL
+        conn = psycopg2.connect(
+            host='127.0.0.1',
+            port=5432,
+            user='dwuser',
+            password='dwpass',
+            dbname='datawarehouse_db'
+        )
 
         # Actualizar dimensiones
         actualizar_dimensiones(df_ai_clean, df_water_clean, conn)
@@ -318,7 +354,7 @@ def main():
         print(f"   • Ventana actualizada: {FECHA_DESDE} a {FECHA_HASTA}")
         print(f"   • Dimensiones actualizadas: 3 (carga total)")
         print(f"   • Hechos actualizados: últimos {VENTANA_DIAS} días")
-        print(f"   • Base de datos: {DB_FILE}")
+        print(f"   • Base de datos: MySQL (datawarehouse_db)")
         print(f"\nFin: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print("\nNOTA: Esta actualización puede ejecutarse diariamente")
         print("      para mantener el Data Warehouse sincronizado.")
